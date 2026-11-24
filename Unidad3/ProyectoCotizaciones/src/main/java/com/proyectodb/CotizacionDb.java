@@ -10,9 +10,20 @@ public class CotizacionDb implements dbMetodos {
 
     @Override public boolean abrir() {
         try {
-            if (conexion == null || conexion.isClosed()) conexion = DriverManager.getConnection(url, usuario, password);
+            if (conexion == null || conexion.isClosed()) {
+                conexion = DriverManager.getConnection(url, usuario, password);
+                // Impide interpretar al revés registros del proyecto anterior.
+                try (PreparedStatement ps = conexion.prepareStatement(
+                        "SELECT COLUMN_DEFAULT FROM information_schema.COLUMNS "
+                        + "WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='Cotizacion' AND COLUMN_NAME='status'");
+                     ResultSet rs = ps.executeQuery()) {
+                    if (!rs.next() || !"0".equals(rs.getString(1))) {
+                        throw new SQLException("Ejecuta base_de_datos.sql (instalación nueva) o migrar_estados.sql (versión anterior).");
+                    }
+                }
+            }
             return true;
-        } catch (SQLException e) { System.err.println("Error de conexión: " + e.getMessage()); return false; }
+        } catch (SQLException e) { System.err.println("Error de conexión: " + e.getMessage()); cerrar(); return false; }
     }
     @Override public boolean cerrar() {
         try {
@@ -35,7 +46,7 @@ public class CotizacionDb implements dbMetodos {
         finally { cerrar(); }
     }
     private Object consultarUno(String sql, Object valor) {
-        if (!abrir()) return null;
+        if (!abrir()) throw new IllegalStateException("No hay conexión con MySQL o falta migrar los estados.");
         try (PreparedStatement ps = conexion.prepareStatement(sql)) {
             ps.setObject(1, valor);
             try (ResultSet rs = ps.executeQuery()) { return rs.next() ? convertir(rs) : null; }
@@ -61,15 +72,15 @@ public class CotizacionDb implements dbMetodos {
         return ejecutar("UPDATE Cotizacion SET numCotizacion=?,descripcion=?,precio=?,porcentaje=?,plazos=?,fecha=?,status=? WHERE idCotizacion=?",
             valores[0],valores[1],valores[2],valores[3],valores[4],valores[5],valores[6],c.getIdCotizacion());
     }
-    @Override public int habilitar(int id) { return ejecutar("UPDATE Cotizacion SET status=1 WHERE idCotizacion=?", id); }
-    @Override public int deshabilitar(int id) { return ejecutar("UPDATE Cotizacion SET status=0 WHERE idCotizacion=?", id); }
+    @Override public int habilitar(int id) { return ejecutar("UPDATE Cotizacion SET status=0 WHERE idCotizacion=?", id); }
+    @Override public int deshabilitar(int id) { return ejecutar("UPDATE Cotizacion SET status=1 WHERE idCotizacion=?", id); }
     @Override public Object buscarId(int id) { return consultarUno("SELECT * FROM Cotizacion WHERE idCotizacion=?", id); }
     @Override public Object buscar(String num) { return consultarUno("SELECT * FROM Cotizacion WHERE numCotizacion=?", num); }
     @Override public int borrar(int id) { return ejecutar("DELETE FROM Cotizacion WHERE idCotizacion=?", id); }
 
     // Estos ResultSet se devuelven desconectados mediante CachedRowSet para evitar fugas de conexiones.
     private ResultSet listado(int status) {
-        if (!abrir()) return null;
+        if (!abrir()) throw new IllegalStateException("No hay conexión con MySQL o falta migrar los estados.");
         try (PreparedStatement ps = conexion.prepareStatement("SELECT * FROM Cotizacion WHERE status=? ORDER BY idCotizacion DESC")) {
             ps.setInt(1, status);
             try (ResultSet rs = ps.executeQuery()) {
@@ -80,11 +91,11 @@ public class CotizacionDb implements dbMetodos {
         } catch (SQLException e) { throw new IllegalStateException(e.getMessage(), e); }
         finally { cerrar(); }
     }
-    @Override public ResultSet buscarActivos() { return listado(1); }
-    @Override public ResultSet buscarNoActivos() { return listado(0); }
+    @Override public ResultSet buscarActivos() { return listado(0); }
+    @Override public ResultSet buscarNoActivos() { return listado(1); }
     public java.util.List<Cotizacion> listarTodos() {
         java.util.List<Cotizacion> lista = new java.util.ArrayList<>();
-        if (!abrir()) return lista;
+        if (!abrir()) throw new IllegalStateException("No hay conexión con MySQL o falta migrar los estados.");
         try (Statement st = conexion.createStatement(); ResultSet rs = st.executeQuery("SELECT * FROM Cotizacion ORDER BY idCotizacion DESC")) {
             while (rs.next()) lista.add(convertir(rs));
             return lista;

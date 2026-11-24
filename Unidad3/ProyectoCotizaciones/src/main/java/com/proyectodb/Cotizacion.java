@@ -12,7 +12,9 @@ public class Cotizacion {
     private Date fecha;
     private int status;
 
-    public Cotizacion() { }
+    public Cotizacion() {
+        this(0, "", "", 0f, 0f, 12, new Date(), 0);
+    }
 
     public Cotizacion(int idCotizacion, String numCotizacion, String descripcion,
                       float porcentaje, float precio, int plazos, Date fecha, int status) {
